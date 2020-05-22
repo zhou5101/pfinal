@@ -1,7 +1,7 @@
 /* compute optimal solutions for sliding block puzzle. */
-#define NROWS 5
-#define NCOLS 4
-#include <SDL2/SDL.h>
+#define ROWS 5
+#define COLS 4
+#include <SDL.h>
 #include <stdio.h>
 #include <cstdlib>
 #include <algorithm>
@@ -10,13 +10,19 @@ using namespace std;
 #include <cassert>
 #include <unordered_set>
 using std::unordered_set;
-#include <unordered_map>
-using std::unordered_map;
-#include <dequeue>
-using std::dequeue;
-#inlcude <vector>
+#include <map>
+using std::map;
+#include <deque>
+using std::deque;
+#include <vector>
 using std::vector;
 using std::find;
+#include<iostream>
+using std::cout;
+#include <chrono>
+#include <thread>
+
+
 /* SDL reference: https://wiki.libsdl.org/CategoryAPI */
 
 /* initial size; will be set to screen size after window creation. */
@@ -153,38 +159,38 @@ void initBlocks()
 		if (i<4)
 			B[i].rotate();
 		}
-		int uw = bframe.w/NCOLS;
-		int uh = bframe.h/NROWS;
-
-		B[0].r = 0;
+		int uw = bframe.w/COLS;
+		int uh = bframe.h/ROWS;
+		//VER 
+		B[0].r = 1;
 		B[0].c = 0;
 
-		B[1].r = 0;
-		B[1].c = 3;
+		B[1].r = 1;
+		B[1].c = 1;
 
 		B[2].r = 3;
-		B[2].c = 3;
+		B[2].c = 0;
 
 		B[3].r = 3;
-		B[3].c = 0;
-
+		B[3].c = 1;
+		//HOR
 		B[4].r = 2;
-		B[4].c = 1;
+		B[4].c = 2;
+		//SSQ
+		B[5].r = 0;
+		B[5].c = 0;
 
-		B[5].r = 3;
-		B[5].c = 1;
+		B[6].r = 0;
+		B[6].c = 1;
 
-		B[6].r = 3;
-		B[6].c = 2;
+		B[7].r = 3;
+		B[7].c = 2;
 
-		B[7].r = 4;
-		B[7].c = 1;
-
-		B[8].r = 4;
-		B[8].c = 2;
-
+		B[8].r = 3;
+		B[8].c = 3;
+		//LSQ
 		B[9].r = 0;
-		B[9].c = 1;
+		B[9].c = 2;
 
 	for(int i = 0; i < 10; i++){
 			B[i].R.x =  bframe.x + B[i].c*uw + ep;
@@ -297,33 +303,264 @@ void snap(block* b)
 	/* translate the corner of the bounding box of the board to (0,0). */
 	int x = b->R.x - bframe.x;
 	int y = b->R.y - bframe.y;
-	int uw = bframe.w/NCOLS;
-	int uh = bframe.h/NROWS;
+	int uw = bframe.w/COLS;
+	int uh = bframe.h/ROWS;
 	/* NOTE: in a perfect world, the above would be equal. */
 	int i = (y+uh/2)/uh; /* row */
 	int j = (x+uw/2)/uw; /* col */
-	if (0 <= i && i < NROWS && 0 <= j && j < NCOLS) {
+	if (0 <= i && i < ROWS && 0 <= j && j < COLS) {
 		b->R.x = bframe.x + j*uw + ep;
 		b->R.y = bframe.y + i*uh + ep;
 		b->r = i;
 		b->c = j;
 	}
 	else{
-		b->r = NROWS;
-		b->c = NCOLS;
+		b->r = ROWS;
+		b->c = COLS;
 	}
 }
 
-class bfs{
-	public:
+class solver {
+public:
+	void clear() {
+		for (int i = 0; i < ROWS; i++) {
+			for (int j = 0; j < COLS; j++)
+				board[i][j] = -1;
+		}
+	}
+	void read() {
+		for (int i = 0; i < 10; i++) {
+			int r = B[i].r, c = B[i].c;
+			if (board[r][c] == -1) {
+				board[r][c] = i;
+				if (B[i].type == hor) {
+					board[r][c + 1] = i;
+				}
+				else if (B[i].type == ver) {
+					board[r + 1][c] = i;
+				}
+				else {
+					if (B[i].type == lsq) {
+						board[r + 1][c] = i;
+						board[r][c + 1] = i;
+						board[r + 1][c + 1] = i;
+					}
+				}
+			}
+		}
+	}
 
-	private:
+	void print() {
+		for (int i = 0; i < ROWS; i++) {
+			for (int j = 0; j < COLS; j++)
+				cout << board[i][j] << ' ';
+			cout << '\n';
+		}
+	}
 
-}
+	void neighbors() {
+		n.clear();
+		for (int i = 0; i < 5; i++) {
+			for (int j = 0; j < 4; j++) {
+				if (board[i][j] == -1) {
+					if (i - 1 >= 0)
+						if (board[i - 1][j] > -1)
+							n.insert(board[i - 1][j]);
+					if (i + 1 < ROWS)
+						if (board[i + 1][j] > -1)
+							n.insert(board[i + 1][j]);
+					if (j - 1 >= 0)
+						if (board[i][j - 1] > -1)
+							n.insert(board[i][j - 1]);
+					if (j + 1 < COLS)
+						if (board[i][j + 1] > -1)
+							n.insert(board[i][j + 1]);
+				}
+			}
+		}
+	}
+	void printN() {
+		cout << "neighbors: ";
+		for (auto i = n.begin(); i != n.end(); i++) {
+			cout << *i << " ";
+		}
+		cout << "\n";
+	}
+
+	void coordinate() {
+		c.clear();
+		for (int i = 0; i < ROWS; i++)
+			for (int j = 0; j < COLS; j++)
+				if(board[i][j] > -1)
+					c[board[i][j]].push_back( make_pair(i, j));
+	}
+	void printC() {
+		for (auto i = c.begin(); i != c.end(); i++) {
+			cout << i->first << ": ";
+			for (auto j = i->second.begin(); j != i->second.end(); j++)
+				cout <<'(' <<j->first << ',' << j->second<<')';
+			cout << "\n";
+		}
+		cout << "\n";
+	}
+
+	bool found() {
+		return cp[4][1] == 9 && cp[4][2] == 9;
+	}
+
+	bool validMove(int row, int col, vector<pair<int,int>> xy) {
+		for (auto i = xy.begin(); i != xy.end(); i++) {
+			if ((i->first + row) > -1 && (i->first + row) < ROWS && (i->second + col) > -1 && (i->second + col) < COLS)
+				if (cp[i->first + row][i->second + col] == -1 || cp[i->first + row][i->second + col] == board[i->first][i->second])
+					continue;
+				else
+					return false;
+			else
+				return false;
+		}
+		return true;
+	}
+
+	void bfs() {
+		size_t counter = 0;
+		clear();
+		read();
+		q.clear();
+		p.clear();
+		r.clear();
+		solution.clear();
+		vector<vector<int>> initB = board;
+		goal.clear();
+		q.push_back(board);
+		while (!q.empty()) {
+			board = q.front();
+			cp = board;
+			coordinate();
+			neighbors();
+			q.pop_front();
+			if (found()) {
+				cout << "Solution Found!!!\n";
+				goal = board;
+				break;
+			}
+			cout << "NO. of Configuration: " << counter++ << '\n';
+			for (auto i = n.begin(); i != n.end(); i++) {
+				int z = *i;
+				for (int j = 0; j < 8; j++) {
+					int row = dir[j][0], col = dir[j][1];
+					if (validMove(row, col, c[*i])) {
+						for (auto i = c[z].begin(); i != c[z].end(); i++) {
+							cp[i->first][i->second] = -1;
+						}
+						for (auto i = c[z].begin(); i != c[z].end(); i++) {
+							cp[i->first + row][i->second + col] = z;
+						}
+						simplfiy(cp);
+						if (find(q.begin(), q.end(), cp) == q.end() && find(r.begin(), r.end(), sboard) == r.end()) {
+							r.push_back(sboard);
+							q.push_back(cp);
+							p.insert({ cp,board });
+						}
+					}
+					cp = board;
+				}
+			}
+				
+
+		}
+		if (goal == board) {
+			solution.push_front(goal);
+			while (p.find(goal)->second != initB) {
+				goal = p.find(goal)->second;
+				solution.push_front(goal);
+			}
+			solution.push_front(goal);
+			printf("Solved in %zu steps.\n", solution.size());
+		}
+		else
+			cout << "No Solution!!!\n";
+		
+	}
+
+	void simplfiy(vector<vector<int>> g) {
+
+		for (int i = 0; i < ROWS; i++)
+			for (int j = 0; j < COLS; j++)
+				if(g[i][j]>-1)
+					g[i][j] = B[g[i][j]].type;
+		sboard = g;
+	}
+
+	void createSol(vector<vector<int>> g) {
+		solution.push_front(p.find(g)->second);
+	}
+	void assignToBoard(vector<vector<int>> g) {
+		board = g;
+		coordinate();
+		int uw = bframe.w / COLS;
+		int uh = bframe.h / ROWS;
+		for (int i = 0; i < NBLOCKS; i++)
+		{
+			B[i].r = c[i].at(0).first;
+			B[i].c = c[i].at(0).second;
+			B[i].R.x = bframe.x + B[i].c * uw + ep;
+			B[i].R.y = bframe.y + B[i].r * uh + ep;
+		}
+	}
+
+	void prev() {
+		if (index <= 0)
+			return;
+		index--;
+		assignToBoard(solution[index]);
+	}
+
+	void next() {
+		if (index >= solution.size()-1)
+			return;
+		assignToBoard(solution[index++]);
+	}
+
+	void oneClickSolve() {
+		int i = 0;
+		while (i != solution.size()) {
+			printf("# of Configuration: %i\n", i);
+			assignToBoard(solution[i]);
+			std::this_thread::sleep_for(std::chrono::seconds(5));
+			i++;
+		}
+
+	
+	}
+
+
+	size_t steps() {
+		return solution.size();
+	}
+	
+	solver() {
+		vector<vector<int>> temp(5, vector<int>(4, -1));
+		board = temp;
+		cp = temp;
+	}
+
+private:
+	vector<vector<int>> board;
+	vector<vector<int>> cp;//copy of board;
+	vector<vector<int>> sboard;//simplified board;
+	vector<vector<int>> goal;
+	deque<vector<vector<int>>> q;//for bfs
+	unordered_set<int> n;//neighbours
+	deque<vector<vector<int>>> solution;
+	map<vector<vector<int>>, vector<vector<int>>> p;//record parent of different state
+	map<int,vector<pair<int, int>>> c;
+	vector<vector<int>> dir = { {0,1}, {0,-1}, {1,0}, {-1,0}, {0,2}, {0,-2}, {2,0}, {-2,0} };
+	deque<vector<vector<int>>> r; //eliminate repeated conggiguration
+	int index = 0;
+};
 
 int main(int argc, char *argv[])
 {
-	Solution s;
 	/* TODO: add option to specify starting state from cmd line? */
 	/* start SDL; create window and such: */
 	if(!init()) {
@@ -333,6 +570,8 @@ int main(int argc, char *argv[])
 	atexit(close);
 	bool quit = false; /* set this to exit main loop. */
 	SDL_Event e;
+	solver s;
+
 	/* main loop: */
 	while(!quit) {
 		/* handle events */
@@ -380,21 +619,21 @@ int main(int argc, char *argv[])
 						break;
 					case SDLK_LEFT:
 						/* TODO: show previous step of solution */
-						s.previous_state();
+						s.prev();
 						break;
 					case SDLK_RIGHT:
 						/* TODO: show next step of solution */
-						s.next_state();
+						s.next();
 						break;
 					case SDLK_p:
 						/* TODO: print the state to stdout
 						 * (maybe for debugging purposes...) */
-						printf("Current state is %ld\n",s.readCurrentState());
+						s.print();
 						break;
 					case SDLK_s:
 						/* TODO: try to find a solution */
 						s.bfs();
-						s.oneClick();
+						s.oneClickSolve();
 						break;
 					default:
 						break;
@@ -404,7 +643,7 @@ int main(int argc, char *argv[])
 		fcount++;
 		render();
 	}
-	printf("done");
+	
 	printf("total frames rendered: %i\n",fcount);
 	return 0;
 }
