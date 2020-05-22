@@ -3,14 +3,20 @@
 #define NCOLS 4
 #include <SDL2/SDL.h>
 #include <stdio.h>
-#include <cstdlib>   /* for atexit() */
+#include <cstdlib>
 #include <algorithm>
 using std::swap;
 using namespace std;
 #include <cassert>
 #include <unordered_set>
+using std::unordered_set;
 #include <unordered_map>
-#include <queue> 
+using std::unordered_map;
+#include <dequeue>
+using std::dequeue;
+#inlcude <vector>
+using std::vector;
+using std::find;
 /* SDL reference: https://wiki.libsdl.org/CategoryAPI */
 
 /* initial size; will be set to screen size after window creation. */
@@ -37,7 +43,7 @@ struct block {
 	 * this struct, like where it is attached on the board.
 	 * (Alternatively, you could just compute this from R.x and R.y,
 	 * but it might be convenient to store it directly.) */
-	int i,j; //board coordinates
+	int r,c; //block's coordinates
 	void rotate() /* rotate rectangular pieces */
 	{
 		if (type != hor && type != ver) return;
@@ -142,6 +148,49 @@ void initBlocks()
 	B[9].R.w = 2*(u+ep);
 	B[9].R.h = 2*(u+ep);
 	B[9].type = lsq;
+ //initial configuration
+	for (int i = 0; i< 10; i++){
+		if (i<4)
+			B[i].rotate();
+		}
+		int uw = bframe.w/NCOLS;
+		int uh = bframe.h/NROWS;
+
+		B[0].r = 0;
+		B[0].c = 0;
+
+		B[1].r = 0;
+		B[1].c = 3;
+
+		B[2].r = 3;
+		B[2].c = 3;
+
+		B[3].r = 3;
+		B[3].c = 0;
+
+		B[4].r = 2;
+		B[4].c = 1;
+
+		B[5].r = 3;
+		B[5].c = 1;
+
+		B[6].r = 3;
+		B[6].c = 2;
+
+		B[7].r = 4;
+		B[7].c = 1;
+
+		B[8].r = 4;
+		B[8].c = 2;
+
+		B[9].r = 0;
+		B[9].c = 1;
+
+	for(int i = 0; i < 10; i++){
+			B[i].R.x =  bframe.x + B[i].c*uw + ep;
+			B[i].R.y = bframe.y + B[i].r*uh + ep;
+			}
+
 }
 
 void drawBlocks()
@@ -196,7 +245,7 @@ void render()
 	/* make a double frame */
 	SDL_Rect rframe(bframe);
 	int e = 3;
-	rframe.x -= e; 
+	rframe.x -= e;
 	rframe.y -= e;
 	rframe.w += 2*e;
 	rframe.h += 2*e;
@@ -256,355 +305,21 @@ void snap(block* b)
 	if (0 <= i && i < NROWS && 0 <= j && j < NCOLS) {
 		b->R.x = bframe.x + j*uw + ep;
 		b->R.y = bframe.y + i*uh + ep;
-		b->i = i;
-		b->j = j;
+		b->r = i;
+		b->c = j;
 	}
 	else{
-		b->i = NROWS;
-		b->j = NCOLS;
+		b->r = NROWS;
+		b->c = NCOLS;
 	}
 }
 
-class Solution{
-	int state_index;
-	bool board[NROWS][NCOLS];
-	unordered_set<long int> visited;
-	unordered_map<long int,long int> parentOf;
-	queue<long int> Q;
-	vector<long int> states;
-	bool found;
-	void clearBoard(){
-		for(int i=0;i<NROWS;i++){
-			for(int j =0; j<NCOLS;j++){
-				board[i][j] = false;
-			}
-		}
-	}
-		
-	bool isFound(long int state){
-		int y = state & 7;
-		state >>= 3;
-		int x = state & 7;
-		return x == 3 and y == 1;
-	}
-	
-	void assignToBoard(long int state){
-		clearBoard();
-		for(int i=0;i<NBLOCKS;i++){
-			int y = state & 7;
-			state >>= 3;
-			int x = state & 7;
-			state >>= 3;
-			if(x == NROWS){ //Piece is outside of board
-				continue;
-			}
-			if(i == 0){ //Piece is big square
-				for(int j=0;j<2;j++){
-					for(int k=0;k<2;k++){
-						if(x+i < NROWS && y + j < NCOLS){
-							board[x+i][y+j] = true;
-						}
-					}
-				}
-			}
-			else if(i < 5){ //Piece is small square
-				board[x][y] = true;
-			}
-			else{ //Piece is rectangle
-				board[x][y] = true;
-				if(B[NBLOCKS-i-1].type == ver){
-					if(x+1 < NROWS){ 
-						board[x+1][y] = true;
-					}
-				}
-				else{
-					if(y+1 < NCOLS){ 
-						board[x][y+1] = true;
-					}
-				}
-			}
-		}
-	}
-	
-	void generateChildStates(long int state){
-		long int temp = state;
-		for(int i=0;i<NBLOCKS;i++){
-			int y = temp & 7;
-			temp >>= 3;
-			int x = temp & 7;
-			temp >>= 3;
-			if(i == 0){ //Big square
-				generateBigSquare(state,x,y);
-			}
-			else if(i < 5){ //Small square
-				generateSmallSquare(state,x,y,i);
-			}
-			else{ //Rectangle
-				generateRectangle(state,x,y,i);
-			}
-		}
-	}
-	
-	void generateRectangle(long int state,int x, int y, int i){
-		//Remove from board
-		board[x][y] = false;
-		if(B[NBLOCKS-i-1].type == ver){
-			if(x+1 < NROWS){ 
-				board[x+1][y] = false;
-			}
-		}
-		else{
-			if(y+1 < NCOLS){ 
-				board[x][y+1] = false;
-			}
-		}
-		
-		tryToPlaceRectangle(state,x-1,y,i);
-		tryToPlaceRectangle(state,x+1,y,i);
-		tryToPlaceRectangle(state,x,y-1,i);
-		tryToPlaceRectangle(state,x,y+1,i);
-		
-		//Add back to board
-		board[x][y] = true;
-		if(B[NBLOCKS-i-1].type == ver){
-			if(x+1 < NROWS){ 
-				board[x+1][y] = true;
-			}
-		}
-		else{
-			if(y+1 < NCOLS){ 
-				board[x][y+1] = true;
-			}
-		}
-	}
-	
-	void tryToPlaceRectangle(long int state,int x,int y,int i){
-		if(x < 0 || x >= NROWS || y < 0 || y >= NCOLS || board[x][y]){
-			return;
-		}
-		if(B[NBLOCKS-i-1].type == ver){
-			if(x+1 >= NROWS || board[x+1][y]){ 
-				return;
-			}
-		}
-		else{
-			if(y+1 >= NCOLS || board[x][y+1]){ 
-				return;
-			}
-		}
-		long int old_state = state;
-		long int mask = 0;
-		mask |= 7;
-		mask <<= 3;
-		mask |= 7;
-		mask <<= i * 6;
-		long int notmask = ~mask;
-		state &= notmask; //Erase current state
-		long int xy = 0;
-		xy |= x;
-		xy <<= 3;
-		xy |= y;
-		xy <<= i * 6;
-		state |= xy;
-		
-		if(visited.find(state) == visited.end()){
-			visited.insert(state);
-			Q.push(state);
-			parentOf[state] = old_state;
-		}
-		
-	}
-	
-	void generateSmallSquare(long int state,int x,int y,int i){
-		//Remove from board
-		board[x][y] = false;
-		
-		tryToPlaceSmallSquare(state,x-1,y,i);
-		tryToPlaceSmallSquare(state,x+1,y,i);
-		tryToPlaceSmallSquare(state,x,y-1,i);
-		tryToPlaceSmallSquare(state,x,y+1,i);
-				
-		//Add back to board
-		board[x][y] = true;
-	}
-	
-	void tryToPlaceSmallSquare(long int state,int x,int y,int i){
-		if(x < 0 || x >= NROWS || y < 0 || y >= NCOLS || board[x][y]){
-			return;
-		}
-		long int old_state = state;
-		long int mask = 0;
-		mask |= 7;
-		mask <<= 3;
-		mask |= 7;
-		mask <<= i * 6;
-		long int notmask = ~mask;
-		state &= notmask; //Erase current state
-		long int xy = 0;
-		xy |= x;
-		xy <<= 3;
-		xy |= y;
-		xy <<= i * 6;
-		state |= xy;
-		
-		if(visited.find(state) == visited.end()){
-			visited.insert(state);
-			Q.push(state);
-			parentOf[state] = old_state;
-		}
-		
-	}
-	
-	void generateBigSquare(long int state,int x, int y){
-		//Remove from board
-		for(int i=0;i<2;i++){
-			for(int j=0;j<2;j++){
-				if(x+i < NROWS && y+j < NCOLS){
-					board[x+i][y+j] = false;
-				}
-			}
-		}
-		
-		tryToPlaceBigSquare(state,x-1,y);
-		tryToPlaceBigSquare(state,x+1,y);
-		tryToPlaceBigSquare(state,x,y-1);
-		tryToPlaceBigSquare(state,x,y+1);
-		//Add back to board
-		for(int i=0;i<2;i++){
-			for(int j=0;j<2;j++){
-				if(x+i < NROWS && y+j < NCOLS){
-					board[x+i][y+j] = true;
-				}
-			}
-		}
-	}
-	
-	void tryToPlaceBigSquare(long int state,int x, int y){
-		for(int i=0;i<2;i++){
-			for(int j=0;j<2;j++){
-				if(x+i < NROWS && y+j < NCOLS && x+i >= 0 && y+j >= 0){
-					if(board[x+i][y+j]){
-						return; //Another piece is already placed here
-					}
-				}
-				else{//Outside of board
-					return;
-				}
-			}
-		}
-		long int old_state = state;
-		//Erase previous pos
-		state >>= 6;
-		//Add x coordinate
-		state <<= 3;
-		state |= x;
-		//Add y coordinate
-		state <<= 3;
-		state |= y;
-		if(visited.find(state) == visited.end()){
-			visited.insert(state);
-			Q.push(state);
-			parentOf[state] = old_state;
-		}
-	}
-	
-	void assignStateToBlocks(long int state){
-		int uw = bframe.w/NCOLS;
-		int uh = bframe.h/NROWS;
-		for(int i=9;i>=0;i--){
-			int y = state & 7;
-			state >>= 3;
-			int x = state & 7;
-			state >>= 3;
-			if(x == NROWS){ //If piece is outside of board skip it
-				continue;
-			}
-			B[i].i = x;
-			B[i].j = y;
-			B[i].R.x = bframe.x + y*uw + ep;
-			B[i].R.y = bframe.y + x*uh + ep;
-		}
-	}
-	
-public:
-	
-	Solution(){
-		state_index = 0;
-		states.clear();
-		parentOf.clear();
-		visited.clear();
-		Q = queue<long int>();
-		clearBoard();
-		found = false;
-	}
-	
-	void solve(){
-		state_index = 0;
-		Q = queue<long int>();
-		states.clear();
-		parentOf.clear();
-		visited.clear();
-		clearBoard();
-		long int start = readCurrentState();
-		visited.insert(start);
-		Q.push(start);
-		found = false;
-		long int found_state = 0;
-		while(!Q.empty() && !found){
-			long int state = Q.front();
-			found = isFound(state);
-			if(found){
-				found_state = state;
-				break;
-			}
-			Q.pop();
-			assignToBoard(state);
-			generateChildStates(state);
-		}
-		if(found){
-			printf("Solution found.\n");
-			while(parentOf.find(found_state) != parentOf.end()){ //State is not starting state
-				states.push_back(found_state);
-				found_state = parentOf[found_state];
-			}
-			states.push_back(start);
-			state_index = states.size() - 1;
-		}
-		else{
-			printf("Solution not found.\n");
-		}
-	}
-	
-	void next_state(){
-		if(state_index <= 0){
-			return;
-		}
-		state_index--;
-		long int state = states.at(state_index);
-		assignStateToBlocks(state);
-	}
-	
-	void previous_state(){
-		if(state_index >= states.size()-1){
-			return;
-		}
-		state_index++;
-		long int state = states.at(state_index);
-		assignStateToBlocks(state);
-	}
-	
-	long int readCurrentState(){
-		long int state = 0;
-		for(int i=0;i<NBLOCKS;i++){
-			state <<= 3;
-			state |= B[i].i;
-			state <<= 3;
-			state |= B[i].j;
-		}
-		return state;
-	}
-	
-};
+class bfs{
+	public:
+
+	private:
+
+}
 
 int main(int argc, char *argv[])
 {
@@ -678,7 +393,8 @@ int main(int argc, char *argv[])
 						break;
 					case SDLK_s:
 						/* TODO: try to find a solution */
-						s.solve();
+						s.bfs();
+						s.oneClick();
 						break;
 					default:
 						break;
@@ -688,7 +404,7 @@ int main(int argc, char *argv[])
 		fcount++;
 		render();
 	}
-
+	printf("done");
 	printf("total frames rendered: %i\n",fcount);
 	return 0;
 }

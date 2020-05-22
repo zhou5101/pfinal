@@ -1,24 +1,16 @@
 /* compute optimal solutions for sliding block puzzle. */
-#include <SDL.h>
-//#include <SDL_ttf.h>
+#define NROWS 5
+#define NCOLS 4
+#include <SDL2/SDL.h>
 #include <stdio.h>
-#include <cstdlib>   /* for atexit() */
+#include <cstdlib>
 #include <algorithm>
 using std::swap;
+using namespace std;
 #include <cassert>
-#include <vector>
-using std::vector;
-#include <deque>
-using std::deque;
-#include <map>
-using std::map;
-#include <set>
-using std::set;
-#include<iostream>;
-using std::cout;
-using std::find;
-typedef vector<vector<int> > graph;
-
+#include <unordered_set>
+#include <unordered_map>
+#include <queue>
 /* SDL reference: https://wiki.libsdl.org/CategoryAPI */
 
 /* initial size; will be set to screen size after window creation. */
@@ -33,11 +25,11 @@ static const int ep = 2; /* epsilon offset from grid lines */
 bool init(); /* setup SDL */
 void initBlocks();
 
-#define FULLSCREEN_FLAG SDL_WINDOW_FULLSCREEN_DESKTOP
-// #define FULLSCREEN_FLAG 0
+//#define FULLSCREEN_FLAG SDL_WINDOW_FULLSCREEN_DESKTOP
+#define FULLSCREEN_FLAG 0
 
 /* NOTE: ssq == "small square", lsq == "large square" */
-enum bType {em,hor,ver,ssq,lsq};
+enum bType {hor,ver,ssq,lsq};
 struct block {
 	SDL_Rect R; /* screen coords + dimensions */
 	bType type; /* shape + orientation */
@@ -45,6 +37,7 @@ struct block {
 	 * this struct, like where it is attached on the board.
 	 * (Alternatively, you could just compute this from R.x and R.y,
 	 * but it might be convenient to store it directly.) */
+	int r,c; //block's coordinates
 	void rotate() /* rotate rectangular pieces */
 	{
 		if (type != hor && type != ver) return;
@@ -107,271 +100,92 @@ void initBlocks()
 {
 	int& W = SCREEN_WIDTH;
 	int& H = SCREEN_HEIGHT;
-	int h = H * 3 / 4;
-	int w = 4 * h / 5;
-	int u = h / 5 - 2 * ep;
-	int mw = (W - w) / 2;
-	int mh = (H - h) / 2;
+	int h = H*3/4;
+	int w = 4*h/5;
+	int u = h/5-2*ep;
+	int mw = (W-w)/2;
+	int mh = (H-h)/2;
 
 	/* setup bounding rectangle of the board: */
-	bframe.x = (W - w) / 2; //x-coordinate of large retange in surround the grid
-	bframe.y = (H - h) / 2;//y-x-coordinate of large retange in surround the grid
-	bframe.w = w; //width of board
-	bframe.h = h; //height of board
-
-	int move = bframe.x / 4 + ep; //one grid 
+	bframe.x = (W-w)/2;
+	bframe.y = (H-h)/2;
+	bframe.w = w;
+	bframe.h = h;
 
 	/* NOTE: there is a tacit assumption that should probably be
 	 * made explicit: blocks 0--4 are the rectangles, 5-8 are small
 	 * squares, and 9 is the big square.  This is assumed by the
 	 * drawBlocks function below. */
-	 /*rectangles*/
+
 	for (size_t i = 0; i < 5; i++) {
-		B[i].R.x = (mw - 2 * u) / 2;
-		B[i].R.y = mh + (i + 1) * (u / 5) + i * u;
-		B[i].R.w = 2 * (u + ep);
+		B[i].R.x = (mw-2*u)/2;
+		B[i].R.y = mh + (i+1)*(u/5) + i*u;
+		B[i].R.w = 2*(u+ep);
 		B[i].R.h = u;
 		B[i].type = hor;
 	}
-	B[4].R.x = mw + ep; //origin of the board (0,0)
-	B[4].R.y = mh + ep;
-	B[4].R.w = 2 * (u + ep);
+	B[4].R.x = mw+ep;
+	B[4].R.y = mh+ep;
+	B[4].R.w = 2*(u+ep);
 	B[4].R.h = u;
 	B[4].type = hor;
-
 	/* small squares */
 	for (size_t i = 0; i < 4; i++) {
-		B[i + 5].R.x = (W + w) / 2 + (mw - 2 * u) / 2 + (i % 2) * (u + u / 5);
-		B[i + 5].R.y = mh + ((i / 2) + 1) * (u / 5) + (i / 2) * u;
-		B[i + 5].R.w = u;
-		B[i + 5].R.h = u;
-		B[i + 5].type = ssq;
+		B[i+5].R.x = (W+w)/2 + (mw-2*u)/2 + (i%2)*(u+u/5);
+		B[i+5].R.y = mh + ((i/2)+1)*(u/5) + (i/2)*u;
+		B[i+5].R.w = u;
+		B[i+5].R.h = u;
+		B[i+5].type = ssq;
 	}
-	B[9].R.x = B[5].R.x + u / 10;
-	B[9].R.y = B[7].R.y + u + 2 * u / 5;
-	B[9].R.w = 2 * (u + ep);
-	B[9].R.h = 2 * (u + ep);
+	B[9].R.x = B[5].R.x + u/10;
+	B[9].R.y = B[7].R.y + u + 2*u/5;
+	B[9].R.w = 2*(u+ep);
+	B[9].R.h = 2*(u+ep);
 	B[9].type = lsq;
 
-	//initial configuration
-	for (size_t i = 0; i < 10; i++) {
-		if (i < 4)
+	for (int i = 0; i< 10; i++){
+		if (i<4)
 			B[i].rotate();
-		B[i].R.x = mw + ep;
-		B[i].R.y = mh + ep;
-	}
-	B[1].R.x += 3 * move + ep;
-
-	B[2].R.y += 3 * move + ep;
-
-	B[3].R.x += 3 * move + ep;
-	B[3].R.y += 3 * move + ep;
-
-	B[4].R.x += move + ep;
-	B[4].R.y += 2 * move + ep;
-
-	B[5].R.x += move + ep;
-	B[5].R.y += 3 * move + ep;
-
-	B[6].R.x += 2 * move + ep;
-	B[6].R.y += 3 * move + ep;
-
-	B[7].R.x += move + ep;
-	B[7].R.y += 4 * move + ep;
-
-	B[8].R.x += 2 * move + ep;
-	B[8].R.y += 4 * move + ep;
-
-	B[9].R.x += move + ep;
-
-	/*for (int i = 0; i < 10; i++) {
-		printf("Default B[ %i ].r.x: %i\n", i, B[i].R.x);
-		printf("Default B[ %i ].r.y: %i\n", i, B[i].R.y);
-	}*/
-	/*printf("bframe.x: %i\n", bframe.x);
-	printf("B[1] x-coordinate: %i\n", B[1].R.x);*/
-	printf("move: %i\n", move);
-
-}
-
-void snap(block* b)
-{
-	/* TODO: once you have established a representation for configurations,
-	 * you should update this function to make sure the configuration is
-	 * updated when blocks are placed on the board, or taken off.  */
-assert(b != NULL);
-/* upper left of grid element (i,j) will be at
- * bframe.{x,y} + (j*bframe.w/4,i*bframe.h/5) */
- /* translate the corner of the bounding box of the board to (0,0). */
-
-int x = b->R.x - bframe.x;
-int y = b->R.y - bframe.y;
-int uw = bframe.w / 4;
-int uh = bframe.h / 5;
-/* NOTE: in a perfect world, the above would be equal. */
-int i = (y + uh / 2) / uh; /* row */
-int j = (x + uw / 2) / uw; /* col */
-if (0 <= i && i < 5 && 0 <= j && j < 4) {
-	b->R.x = bframe.x + j * uw + ep;
-	b->R.y = bframe.y + i * uh + ep;
-}
-}
-
-int ycoordinate(block b) //convert bframe.x to row of 2d array
-{
-	int x = (b.R.x - bframe.x) / (bframe.w / 4);
-	return x;
-}
-int xcoordinate(block b)//convert bframe.y to column of 2d array
-{
-	int y = (b.R.y - bframe.y) / (bframe.w / 4);
-	return y;
-}
-struct coordinate {
-	int x, y;
-	coordinate(int r, int c) :x(r), y(c) {} //row and col
-};
-
-void initialG(graph& g) { //read graph
-	for (int i = 0; i < 10; i++) {
-		int r = xcoordinate(B[i]);
-		int c = ycoordinate(B[i]);
-		if (g[r][c] == -1) {
-			g[r][c] = i;
-			if (B[i].R.w > B[i].R.h) {
-				g[r][c + 1] = i;
-			}
-			else if (B[i].R.w < B[i].R.h) {
-				g[r + 1][c] = i;
-			}
-			else {
-				if (B[i].type == lsq) {
-					g[r + 1][c] = i;
-					g[r][c + 1] = i;
-					g[r + 1][c + 1] = i;
-				}
-			}
 		}
-	}
-}
+		int uw = bframe.w/NCOLS;
+		int uh = bframe.h/NROWS;
 
-void printG(const graph& g) { //print graph
-	for (int i = 0; i < 5; i++) {
-		for (int j = 0; j < 4; j++) {
-			printf("[%i]", g[i][j]);
-		}
-		printf("\n");
-	}
-}
+		B[0].r = 0;
+		B[0].c = 0;
 
-bool goal(const graph& g) { //check the state of the solution
-	return (g[4][1] == 9 && g[4][2] == 9);
-}
-void mapG(const graph& g, map<int, vector<coordinate>>& c) {
-	c.clear();
-	for (int i = 0; i < 5; i++)
-		for (int j = 0; j < 4; j++)
-			c[g[i][j]].push_back(coordinate(i, j));
-}
+		B[1].r = 0;
+		B[1].c = 3;
 
-void neighbor(const graph& g, set<int>& n) {
-	n.clear();
-	for (int i = 0; i < 5; i++) {
-		for (int j = 0; j < 4; j++) {
-			if (g[i][j] == -1) {
-				if (i - 1 >= 0)
-					if (g[i - 1][j]>-1)
-						n.insert(g[i - 1][j]);
-				if (i + 1 <= 4)
-					if (g[i + 1][j] > -1)
-						n.insert(g[i + 1][j]);
-				if (j - 1 >= 0)
-					if (g[i][j - 1] > -1)
-						n.insert(g[i][j - 1]);
-				if (j + 1 <= 3)
-					if (g[i][j + 1] > -1)
-						n.insert(g[i][j + 1]);
+		B[2].r = 3;
+		B[2].c = 3;
+
+		B[3].r = 3;
+		B[3].c = 0;
+
+		B[4].r = 2;
+		B[4].c = 1;
+
+		B[5].r = 3;
+		B[5].c = 1;
+
+		B[6].r = 3;
+		B[6].c = 2;
+
+		B[7].r = 4;
+		B[7].c = 1;
+
+		B[8].r = 4;
+		B[8].c = 2;
+
+		B[9].r = 0;
+		B[9].c = 1;
+
+	for(int i = 0; i < 10; i++){
+			B[i].R.x =  bframe.x + B[i].c*uw + ep;
+			B[i].R.y = bframe.y + B[i].r*uh + ep;
 			}
-		}
-	}
-}
-vector<vector<int>> dir = { {0,1}, {0,-1}, {1,0}, {-1,0}, {0,2}, {0,-2}, {2,0}, {-2,0} };
-bool validM(int& row, int& col, vector<coordinate>& c, const int& n, const graph& cp) {
-	for (auto i = c.begin(); i != c.end(); i++) {
-		if ((i->x + row) > -1 && (i->x + row) < 5 && (i->y + col) > -1 && (i->y + col) < 4)
-			if (cp[i->x + row][i->y + col] == -1 || cp[i->x + row][i->y + col] == n)
-				continue;
-			else
-				return false;
-		else
-			return false;
-	}
-	return true;
-}
-void childG(const graph& g, const int& n, map<int, vector<coordinate>>& c, deque<graph>&q, map<graph,graph>& p) {
-	graph cp = g;
-	int counter = 0;
-	for (int j = 0; j < 8; j++, counter++) {
-		int row = dir[j][0], col = dir[j][1];
-		if (validM(row,col,c[n],n,cp)) {
-			for (auto i = c[n].begin(); i != c[n].end(); i++) {
-				cp[i->x][i->y] = -1;
-			}
-			for (auto i = c[n].begin(); i != c[n].end(); i++) {
-				cp[i->x + row][i->y + col] = n;
-			}
-			if (find(q.begin(), q.end(), cp) == q.end()) {
-				q.push_back(cp);
-				p.insert({ cp,g });
-			}
-			cp = g;
-		}
-	}
-		
-}
 
-map<graph, graph> bfs(deque<graph>& q, const graph& g, map<int, vector<coordinate>>& c, set<int>& n) {
-	map<graph, graph> p;
-	c.clear();
-	n.clear();
-	q.clear();
-	q.push_back(g);
-	graph cp;
-	while(!q.empty())
-	{	cp = q.front();
-
-		q.pop_front();
-		neighbor(cp, n);
-		mapG(cp, c);
-		if (goal(cp)) {
-			graph mark(0);
-			p.insert({ mark,cp });
-			return p;
-		}
-		for (auto i = n.begin(); i != n.end(); i++) {
-			int z = *i;
-			for (int j = 0; j < 8; j++) {
-				int row = dir[j][0], col = dir[j][1];
-				if (validM(row, col, c[*i], *i, cp)) {
-					for (auto i = c[z].begin(); i != c[z].end(); i++) {
-						cp[i->x][i->y] = -1;
-					}
-					for (auto i = c[z].begin(); i != c[z].end(); i++) {
-						cp[i->x + row][i->y + col] = z;
-					}
-					if (find(q.begin(), q.end(), cp) == q.end()) {
-						q.push_back(cp);
-						p.insert({ cp,g });
-					}
-				}
-			}
-		}
-		
-	}
-	
 }
-
-
 
 void drawBlocks()
 {
@@ -425,7 +239,7 @@ void render()
 	/* make a double frame */
 	SDL_Rect rframe(bframe);
 	int e = 3;
-	rframe.x -= e; 
+	rframe.x -= e;
 	rframe.y -= e;
 	rframe.w += 2*e;
 	rframe.h += 2*e;
@@ -466,9 +280,381 @@ void render()
 	SDL_RenderPresent(gRenderer);
 }
 
+void snap(block* b)
+{
+	/* TODO: once you have established a representation for configurations,
+	 * you should update this function to make sure the configuration is
+	 * updated when blocks are placed on the board, or taken off.  */
+	assert(b != NULL);
+	/* upper left of grid element (i,j) will be at
+	 * bframe.{x,y} + (j*bframe.w/4,i*bframe.h/5) */
+	/* translate the corner of the bounding box of the board to (0,0). */
+	int x = b->R.x - bframe.x;
+	int y = b->R.y - bframe.y;
+	int uw = bframe.w/NCOLS;
+	int uh = bframe.h/NROWS;
+	/* NOTE: in a perfect world, the above would be equal. */
+	int i = (y+uh/2)/uh; /* row */
+	int j = (x+uw/2)/uw; /* col */
+	if (0 <= i && i < NROWS && 0 <= j && j < NCOLS) {
+		b->R.x = bframe.x + j*uw + ep;
+		b->R.y = bframe.y + i*uh + ep;
+		b->r = i;
+		b->c = j;
+	}
+	else{
+		b->r = NROWS;
+		b->c = NCOLS;
+	}
+}
+
+class Solution{
+	int state_index;
+	bool board[NROWS][NCOLS];
+	unordered_set<long int> visited;
+	unordered_map<long int,long int> parentOf;
+	queue<long int> Q;
+	vector<long int> states;
+	bool found;
+	void clearBoard(){
+		for(int i=0;i<NROWS;i++){
+			for(int j =0; j<NCOLS;j++)
+				board[i][j] = false;
+		}
+	}
+
+	bool isFound(long int state){
+		int y = state & 7;
+		state >>= 3;
+		int x = state & 7;
+		return x == 3 and y == 1;
+	}
+
+	void assignToBoard(long int state){
+		clearBoard();
+		for(int i=0;i<NBLOCKS;i++){
+			int y = state & 7;
+			state >>= 3;
+			int x = state & 7;
+			state >>= 3;
+			if(x == NROWS){ //block is outside of board
+				continue;
+			}
+			if(i == 0){ //implies block is lsq
+				for(int j=0;j<2;j++){
+					for(int k=0;k<2;k++){
+						if(x+i < NROWS && y + j < NCOLS){
+							board[x+i][y+j] = true;
+						}
+					}
+				}
+			}
+			else if(i < 5){ //implies block is ssq
+				board[x][y] = true;
+			}
+			else{ //implies block is rect
+				board[x][y] = true;
+				if(B[NBLOCKS-i-1].type == ver){
+					if(x+1 < NROWS){
+						board[x+1][y] = true;
+					}
+				}
+				else{
+					if(y+1 < NCOLS){
+						board[x][y+1] = true;
+					}
+				}
+			}
+		}
+	}
+
+	void childS(long int state){//Produce Child of Current State
+		long int temp = state;
+		for(int i=0;i<NBLOCKS;i++){
+			int y = temp & 7;
+			temp >>= 3;
+			int x = temp & 7;
+			temp >>= 3;
+			if(i == 0){ //lsq
+				lsqS(state,x,y);
+			}
+			else if(i < 5){ //ssq
+				ssqS(state,x,y,i);
+			}
+			else{ //rect
+				rectS(state,x,y,i);
+			}
+		}
+	}
+
+	void rectS(long int state,int x, int y, int i){
+		//Remove from board
+		board[x][y] = false;
+		if(B[NBLOCKS-i-1].type == ver){
+			if(x+1 < NROWS){
+				board[x+1][y] = false;
+			}
+		}
+		else{
+			if(y+1 < NCOLS){
+				board[x][y+1] = false;
+			}
+		}
+
+		moveRect(state,x-1,y,i);
+		moveRect(state,x+1,y,i);
+		moveRect(state,x,y-1,i);
+		moveRect(state,x,y+1,i);
+
+		//Add back to board
+		board[x][y] = true;
+		if(B[NBLOCKS-i-1].type == ver){
+			if(x+1 < NROWS){
+				board[x+1][y] = true;
+			}
+		}
+		else{
+			if(y+1 < NCOLS){
+				board[x][y+1] = true;
+			}
+		}
+	}
+
+	void moveRect(long int state,int x,int y,int i){
+		if(x < 0 || x >= NROWS || y < 0 || y >= NCOLS || board[x][y]){
+			return;
+		}
+		if(B[NBLOCKS-i-1].type == ver){
+			if(x+1 >= NROWS || board[x+1][y]){
+				return;
+			}
+		}
+		else{
+			if(y+1 >= NCOLS || board[x][y+1]){
+				return;
+			}
+		}
+		long int old_state = state;
+		long int mask = 0;
+		mask |= 7;
+		mask <<= 3;
+		mask |= 7;
+		mask <<= i * 6;
+		long int notmask = ~mask;
+		state &= notmask; //Erase current state
+		long int xy = 0;
+		xy |= x;
+		xy <<= 3;
+		xy |= y;
+		xy <<= i * 6;
+		state |= xy;
+
+		if(visited.find(state) == visited.end()){
+			visited.insert(state);
+			Q.push(state);
+			parentOf[state] = old_state;
+		}
+
+	}
+
+	void ssqS(long int state,int x,int y,int i){
+		//Remove from board
+		board[x][y] = false;
+
+		moveSsq(state,x-1,y,i);
+		moveSsq(state,x+1,y,i);
+		moveSsq(state,x,y-1,i);
+		moveSsq(state,x,y+1,i);
+
+		//Add back to board
+		board[x][y] = true;
+	}
+
+	void moveSsq(long int state,int x,int y,int i){
+		if(x < 0 || x >= NROWS || y < 0 || y >= NCOLS || board[x][y]){
+			return;
+		}
+		long int old_state = state;
+		long int mask = 0;
+		mask |= 7;
+		mask <<= 3;
+		mask |= 7;
+		mask <<= i * 6;
+		long int notmask = ~mask;
+		state &= notmask; //Erase current state
+		long int xy = 0;
+		xy |= x;
+		xy <<= 3;
+		xy |= y;
+		xy <<= i * 6;
+		state |= xy;
+
+		if(visited.find(state) == visited.end()){
+			visited.insert(state);
+			Q.push(state);
+			parentOf[state] = old_state;
+		}
+
+	}
+
+	void lsqS(long int state,int x, int y){
+		//Remove from board
+		for(int i=0;i<2;i++){
+			for(int j=0;j<2;j++){
+				if(x+i < NROWS && y+j < NCOLS){
+					board[x+i][y+j] = false;
+				}
+			}
+		}
+
+		moveLsq(state,x-1,y);
+		moveLsq(state,x+1,y);
+		moveLsq(state,x,y-1);
+		moveLsq(state,x,y+1);
+		//Add back to board
+		for(int i=0;i<2;i++){
+			for(int j=0;j<2;j++){
+				if(x+i < NROWS && y+j < NCOLS){
+					board[x+i][y+j] = true;
+				}
+			}
+		}
+	}
+
+	void moveLsq(long int state,int x, int y){
+		for(int i=0;i<2;i++){
+			for(int j=0;j<2;j++){
+				if(x+i < NROWS && y+j < NCOLS && x+i >= 0 && y+j >= 0){
+					if(board[x+i][y+j]){
+						return; //Another piece is already placed here
+					}
+				}
+				else{//Outside of board
+					return;
+				}
+			}
+		}
+		long int old_state = state;
+		//Erase previous pos
+		state >>= 6;
+		//Add x coordinate
+		state <<= 3;
+		state |= x;
+		//Add y coordinate
+		state <<= 3;
+		state |= y;
+		if(visited.find(state) == visited.end()){
+			visited.insert(state);
+			Q.push(state);
+			parentOf[state] = old_state;
+		}
+	}
+
+	void assignStateToBlocks(long int state){
+		int uw = bframe.w/NCOLS;
+		int uh = bframe.h/NROWS;
+		for(int i=9;i>=0;i--){
+			int y = state & 7;
+			state >>= 3;
+			int x = state & 7;
+			state >>= 3;
+			if(x == NROWS){ //If piece is outside of board skip it
+				continue;
+			}
+			B[i].r = x;
+			B[i].c = y;
+			B[i].R.x = bframe.x + y*uw + ep;
+			B[i].R.y = bframe.y + x*uh + ep;
+		}
+	}
+
+public:
+
+	Solution(){
+		state_index = 0;
+		states.clear();
+		parentOf.clear();
+		visited.clear();
+		Q = queue<long int>();
+		clearBoard();
+		found = false;
+	}
+
+	void bfs(){
+		state_index = 0;
+		Q = queue<long int>();
+
+		states.clear();
+		parentOf.clear();
+		visited.clear();
+		clearBoard();
+		long int start = readCurrentState();
+		visited.insert(start);
+		Q.push(start);
+		found = false;
+		long int found_state = 0;
+
+		while(!Q.empty() && !found){
+			long int state = Q.front();
+			found = isFound(state);
+			if(found){
+				found_state = state;
+				break;
+			}
+			Q.pop();
+			assignToBoard(state);
+			childS(state);
+		}
+		if(found){
+			printf("Solution found.\n");
+			while(parentOf.find(found_state) != parentOf.end()){ //State is not starting state
+				states.push_back(found_state);
+				found_state = parentOf[found_state];
+			}
+			states.push_back(start);
+			state_index = states.size() - 1;
+
+
+		}
+		else{
+			printf("Solution not found.\n");
+		}
+	}
+
+	void next_state(){
+		if(state_index <= 0){
+			return;
+		}
+		state_index--;
+		long int state = states.at(state_index);
+		assignStateToBlocks(state);
+	}
+
+	void previous_state(){
+		if(state_index >= states.size()-1){
+			return;
+		}
+		state_index++;
+		long int state = states.at(state_index);
+		assignStateToBlocks(state);
+	}
+
+	long int readCurrentState(){
+		long int state = 0;
+		for(int i=0;i<NBLOCKS;i++){
+			state <<= 3;
+			state |= B[i].r;
+			state <<= 3;
+			state |= B[i].c;
+		}
+		return state;
+	}
+
+};
 
 int main(int argc, char *argv[])
 {
+	Solution s;
 	/* TODO: add option to specify starting state from cmd line? */
 	/* start SDL; create window and such: */
 	if(!init()) {
@@ -478,17 +664,6 @@ int main(int argc, char *argv[])
 	atexit(close);
 	bool quit = false; /* set this to exit main loop. */
 	SDL_Event e;
-
-	graph g(5, vector<int>(4, -1)); //matrix stores configuration of graph
-	set<int> n; //store neighbor of the empty block for use of move block
-	map<int, vector<coordinate>> c; //record the cordinate and use for move block
-	deque<graph> q; //store all possible configuration of graph;
-	map<graph, graph> p; //for tracking parent of graph
-
-	initialG(g);
-	printG(g);
-
-
 	/* main loop: */
 	while(!quit) {
 		/* handle events */
@@ -536,16 +711,20 @@ int main(int argc, char *argv[])
 						break;
 					case SDLK_LEFT:
 						/* TODO: show previous step of solution */
+						s.previous_state();
 						break;
 					case SDLK_RIGHT:
 						/* TODO: show next step of solution */
+						s.next_state();
 						break;
 					case SDLK_p:
 						/* TODO: print the state to stdout
 						 * (maybe for debugging purposes...) */
+						printf("Current state is %ld\n",s.readCurrentState());
 						break;
 					case SDLK_s:
 						/* TODO: try to find a solution */
+						s.bfs();
 						break;
 					default:
 						break;
@@ -555,8 +734,7 @@ int main(int argc, char *argv[])
 		fcount++;
 		render();
 	}
+	printf("done");
 	printf("total frames rendered: %i\n",fcount);
-	p = bfs(q, g, c, n);
-	cout << "\nsize: " << p.size() << '\n';
 	return 0;
 }
