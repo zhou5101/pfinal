@@ -1,7 +1,7 @@
 /* compute optimal solutions for sliding block puzzle. */
 #define ROWS 5
 #define COLS 4
-#include <SDL.h>
+#include <SDL2/SDL.h>
 #include <stdio.h>
 #include <cstdlib>
 #include <algorithm>
@@ -161,7 +161,7 @@ void initBlocks()
 		}
 		int uw = bframe.w/COLS;
 		int uh = bframe.h/ROWS;
-		//VER 
+		//VER
 		B[0].r = 1;
 		B[0].c = 0;
 
@@ -465,21 +465,22 @@ public:
 					cp = board;
 				}
 			}
-				
+
 
 		}
 		if (goal == board) {
-			solution.push_front(goal);
+			solution.push_back(goal);
 			while (p.find(goal)->second != initB) {
 				goal = p.find(goal)->second;
 				solution.push_front(goal);
 			}
-			solution.push_front(goal);
+			//solution.push_front(goal);
+			solution.push_front(initB);
 			printf("Solved in %zu steps.\n", solution.size());
 		}
 		else
 			cout << "No Solution!!!\n";
-		
+
 	}
 
 	void simplfiy(vector<vector<int>> g) {
@@ -491,9 +492,6 @@ public:
 		sboard = g;
 	}
 
-	void createSol(vector<vector<int>> g) {
-		solution.push_front(p.find(g)->second);
-	}
 	void assignToBoard(vector<vector<int>> g) {
 		board = g;
 		coordinate();
@@ -509,39 +507,45 @@ public:
 	}
 
 	void prev() {
-		if (index <= 0)
+		if (index <= 0){
+			assignToBoard(solution[0]);
 			return;
-		index--;
-		assignToBoard(solution[index]);
+		}
+
+		assignToBoard(solution[index--]);
 	}
 
 	void next() {
-		if (index >= solution.size()-1)
+		if (index >= solution.size()-1){
+			assignToBoard(solution[solution.size()-1]);
 			return;
+			}
+
 		assignToBoard(solution[index++]);
 	}
 
 	void oneClickSolve() {
 		int i = 0;
 		while (i != solution.size()) {
-			printf("# of Configuration: %i\n", i);
+			//printf("# of Configuration: %i\n", i);
 			assignToBoard(solution[i]);
-			std::this_thread::sleep_for(std::chrono::seconds(5));
+			//std::this_thread::sleep_for(std::chrono::seconds(5));
 			i++;
 		}
 
-	
+
 	}
 
 
 	size_t steps() {
 		return solution.size();
 	}
-	
+
 	solver() {
 		vector<vector<int>> temp(5, vector<int>(4, -1));
 		board = temp;
 		cp = temp;
+		index = 0;
 	}
 
 private:
@@ -552,11 +556,11 @@ private:
 	deque<vector<vector<int>>> q;//for bfs
 	unordered_set<int> n;//neighbours
 	deque<vector<vector<int>>> solution;
-	map<vector<vector<int>>, vector<vector<int>>> p;//record parent of different state
+	map<vector<vector<int>>, vector<vector<int>>> p;//record parent of generated state
 	map<int,vector<pair<int, int>>> c;
 	vector<vector<int>> dir = { {0,1}, {0,-1}, {1,0}, {-1,0}, {0,2}, {0,-2}, {2,0}, {-2,0} };
 	deque<vector<vector<int>>> r; //eliminate repeated conggiguration
-	int index = 0;
+	int index;
 };
 
 int main(int argc, char *argv[])
@@ -633,7 +637,6 @@ int main(int argc, char *argv[])
 					case SDLK_s:
 						/* TODO: try to find a solution */
 						s.bfs();
-						s.oneClickSolve();
 						break;
 					default:
 						break;
@@ -643,7 +646,7 @@ int main(int argc, char *argv[])
 		fcount++;
 		render();
 	}
-	
+
 	printf("total frames rendered: %i\n",fcount);
 	return 0;
 }
