@@ -1,28 +1,16 @@
 /* compute optimal solutions for sliding block puzzle. */
-#define ROWS 5
-#define COLS 4
-#include <SDL.h>
+#define NROWS 5
+#define NCOLS 4
+#include <SDL2/SDL.h>
 #include <stdio.h>
-#include <cstdlib>
+#include <cstdlib>   /* for atexit() */
 #include <algorithm>
 using std::swap;
 using namespace std;
 #include <cassert>
 #include <unordered_set>
-using std::unordered_set;
-#include <map>
-using std::map;
-#include <deque>
-using std::deque;
-#include <vector>
-using std::vector;
-using std::find;
-#include<iostream>
-using std::cout;
-#include <chrono>
-#include <thread>
-
-
+#include <unordered_map>
+#include <queue> 
 /* SDL reference: https://wiki.libsdl.org/CategoryAPI */
 
 /* initial size; will be set to screen size after window creation. */
@@ -49,7 +37,7 @@ struct block {
 	 * this struct, like where it is attached on the board.
 	 * (Alternatively, you could just compute this from R.x and R.y,
 	 * but it might be convenient to store it directly.) */
-	int r,c; //block's coordinates
+	int i,j; //board coordinates
 	void rotate() /* rotate rectangular pieces */
 	{
 		if (type != hor && type != ver) return;
@@ -154,49 +142,6 @@ void initBlocks()
 	B[9].R.w = 2*(u+ep);
 	B[9].R.h = 2*(u+ep);
 	B[9].type = lsq;
- //initial configuration
-	for (int i = 0; i< 10; i++){
-		if (i<4)
-			B[i].rotate();
-		}
-		int uw = bframe.w/COLS;
-		int uh = bframe.h/ROWS;
-		//VER
-		B[0].r = 1;
-		B[0].c = 0;
-
-		B[1].r = 1;
-		B[1].c = 1;
-
-		B[2].r = 3;
-		B[2].c = 0;
-
-		B[3].r = 3;
-		B[3].c = 1;
-		//HOR
-		B[4].r = 2;
-		B[4].c = 2;
-		//SSQ
-		B[5].r = 0;
-		B[5].c = 0;
-
-		B[6].r = 0;
-		B[6].c = 1;
-
-		B[7].r = 3;
-		B[7].c = 2;
-
-		B[8].r = 3;
-		B[8].c = 3;
-		//LSQ
-		B[9].r = 0;
-		B[9].c = 2;
-
-	for(int i = 0; i < 10; i++){
-			B[i].R.x =  bframe.x + B[i].c*uw + ep;
-			B[i].R.y = bframe.y + B[i].r*uh + ep;
-			}
-
 }
 
 void drawBlocks()
@@ -251,7 +196,7 @@ void render()
 	/* make a double frame */
 	SDL_Rect rframe(bframe);
 	int e = 3;
-	rframe.x -= e;
+	rframe.x -= e; 
 	rframe.y -= e;
 	rframe.w += 2*e;
 	rframe.h += 2*e;
@@ -303,272 +248,368 @@ void snap(block* b)
 	/* translate the corner of the bounding box of the board to (0,0). */
 	int x = b->R.x - bframe.x;
 	int y = b->R.y - bframe.y;
-	int uw = bframe.w/COLS;
-	int uh = bframe.h/ROWS;
+	int uw = bframe.w/NCOLS;
+	int uh = bframe.h/NROWS;
 	/* NOTE: in a perfect world, the above would be equal. */
 	int i = (y+uh/2)/uh; /* row */
 	int j = (x+uw/2)/uw; /* col */
-	if (0 <= i && i < ROWS && 0 <= j && j < COLS) {
+	if (0 <= i && i < NROWS && 0 <= j && j < NCOLS) {
 		b->R.x = bframe.x + j*uw + ep;
 		b->R.y = bframe.y + i*uh + ep;
-		b->r = i;
-		b->c = j;
+		b->i = i;
+		b->j = j;
 	}
 	else{
-		b->r = ROWS;
-		b->c = COLS;
+		b->i = NROWS;
+		b->j = NCOLS;
 	}
 }
 
-class solver {
-public:
-	void clear() {
-		for (int i = 0; i < ROWS; i++) {
-			for (int j = 0; j < COLS; j++)
-				board[i][j] = -1;
+class Solution{
+	int state_index;
+	bool board[NROWS][NCOLS];
+	unordered_set<long int> visited;
+	unordered_map<long int,long int> parentOf;
+	queue<long int> Q;
+	vector<long int> states;
+	bool found;
+	void clearBoard(){
+		for(int i=0;i<NROWS;i++){
+			for(int j =0; j<NCOLS;j++){
+				board[i][j] = false;
+			}
 		}
 	}
-
-	void read() {
-		for (int i = 0; i < 10; i++) {
-			int r = B[i].r, c = B[i].c;
-			if (board[r][c] == -1) {
-				board[r][c] = i;
-				if (B[i].type == hor) {
-					board[r][c + 1] = i;
+		
+	bool isFound(long int state){
+		int y = state & 7;
+		state >>= 3;
+		int x = state & 7;
+		return x == 3 and y == 1;
+	}
+	
+	void assignToBoard(long int state){
+		clearBoard();
+		for(int i=0;i<NBLOCKS;i++){
+			int y = state & 7;
+			state >>= 3;
+			int x = state & 7;
+			state >>= 3;
+			if(x == NROWS){ //Piece is outside of board
+				continue;
+			}
+			if(i == 0){ //Piece is big square
+				for(int j=0;j<2;j++){
+					for(int k=0;k<2;k++){
+						if(x+i < NROWS && y + j < NCOLS){
+							board[x+i][y+j] = true;
+						}
+					}
 				}
-				else if (B[i].type == ver) {
-					board[r + 1][c] = i;
+			}
+			else if(i < 5){ //Piece is small square
+				board[x][y] = true;
+			}
+			else{ //Piece is rectangle
+				board[x][y] = true;
+				if(B[NBLOCKS-i-1].type == ver){
+					if(x+1 < NROWS){ 
+						board[x+1][y] = true;
+					}
 				}
-				else {
-					if (B[i].type == lsq) {
-						board[r + 1][c] = i;
-						board[r][c + 1] = i;
-						board[r + 1][c + 1] = i;
+				else{
+					if(y+1 < NCOLS){ 
+						board[x][y+1] = true;
 					}
 				}
 			}
 		}
 	}
-
-	void print() {
-		for (int i = 0; i < ROWS; i++) {
-			for (int j = 0; j < COLS; j++)
-				cout << board[i][j] << ' ';
-			cout << '\n';
+	
+	void generateChildStates(long int state){
+		long int temp = state;
+		for(int i=0;i<NBLOCKS;i++){
+			int y = temp & 7; //
+			temp >>= 3;
+			int x = temp & 7;
+			temp >>= 3;
+			if(i == 0){ //Big square
+				generateBigSquare(state,x,y);
+			}
+			else if(i < 5){ //Small square
+				generateSmallSquare(state,x,y,i);
+			}
+			else{ //Rectangle
+				generateRectangle(state,x,y,i);
+			}
 		}
 	}
-
-	void neighbors() {
-		n.clear();
-		for (int i = 0; i < 5; i++) {
-			for (int j = 0; j < 4; j++) {
-				if (board[i][j] == -1) {
-					if (i - 1 >= 0)
-						if (board[i - 1][j] > -1)
-							n.insert(board[i - 1][j]);
-					if (i + 1 < ROWS)
-						if (board[i + 1][j] > -1)
-							n.insert(board[i + 1][j]);
-					if (j - 1 >= 0)
-						if (board[i][j - 1] > -1)
-							n.insert(board[i][j - 1]);
-					if (j + 1 < COLS)
-						if (board[i][j + 1] > -1)
-							n.insert(board[i][j + 1]);
+	
+	void generateRectangle(long int state,int x, int y, int i){
+		//Remove from board
+		board[x][y] = false;
+		if(B[NBLOCKS-i-1].type == ver){
+			if(x+1 < NROWS){ 
+				board[x+1][y] = false;
+			}
+		}
+		else{
+			if(y+1 < NCOLS){ 
+				board[x][y+1] = false;
+			}
+		}
+		
+		tryToPlaceRectangle(state,x-1,y,i);
+		tryToPlaceRectangle(state,x+1,y,i);
+		tryToPlaceRectangle(state,x,y-1,i);
+		tryToPlaceRectangle(state,x,y+1,i);
+		
+		//Add back to board
+		board[x][y] = true;
+		if(B[NBLOCKS-i-1].type == ver){
+			if(x+1 < NROWS){ 
+				board[x+1][y] = true;
+			}
+		}
+		else{
+			if(y+1 < NCOLS){ 
+				board[x][y+1] = true;
+			}
+		}
+	}
+	
+	void tryToPlaceRectangle(long int state,int x,int y,int i){
+		if(x < 0 || x >= NROWS || y < 0 || y >= NCOLS || board[x][y]){
+			return;
+		}
+		if(B[NBLOCKS-i-1].type == ver){
+			if(x+1 >= NROWS || board[x+1][y]){ 
+				return;
+			}
+		}
+		else{
+			if(y+1 >= NCOLS || board[x][y+1]){ 
+				return;
+			}
+		}
+		long int old_state = state;
+		long int mask = 0;
+		mask |= 7;
+		mask <<= 3;
+		mask |= 7;
+		mask <<= i * 6;
+		long int notmask = ~mask;
+		state &= notmask; //Erase current state
+		long int xy = 0;
+		xy |= x;
+		xy <<= 3;
+		xy |= y;
+		xy <<= i * 6;
+		state |= xy;
+		
+		if(visited.find(state) == visited.end()){
+			visited.insert(state);
+			Q.push(state);
+			parentOf[state] = old_state;
+		}
+		
+	}
+	
+	void generateSmallSquare(long int state,int x,int y,int i){
+		//Remove from board
+		board[x][y] = false;
+		
+		tryToPlaceSmallSquare(state,x-1,y,i);
+		tryToPlaceSmallSquare(state,x+1,y,i);
+		tryToPlaceSmallSquare(state,x,y-1,i);
+		tryToPlaceSmallSquare(state,x,y+1,i);
+				
+		//Add back to board
+		board[x][y] = true;
+	}
+	
+	void tryToPlaceSmallSquare(long int state,int x,int y,int i){
+		if(x < 0 || x >= NROWS || y < 0 || y >= NCOLS || board[x][y]){
+			return;
+		}
+		long int old_state = state;
+		long int mask = 0;
+		mask |= 7;
+		mask <<= 3;
+		mask |= 7;
+		mask <<= i * 6;
+		long int notmask = ~mask;
+		state &= notmask; //Erase current state
+		long int xy = 0;
+		xy |= x;
+		xy <<= 3;
+		xy |= y;
+		xy <<= i * 6;
+		state |= xy;
+		
+		if(visited.find(state) == visited.end()){
+			visited.insert(state);
+			Q.push(state);
+			parentOf[state] = old_state;
+		}
+		
+	}
+	
+	void generateBigSquare(long int state,int x, int y){
+		//Remove from board
+		for(int i=0;i<2;i++){
+			for(int j=0;j<2;j++){
+				if(x+i < NROWS && y+j < NCOLS){
+					board[x+i][y+j] = false;
+				}
+			}
+		}
+		
+		tryToPlaceBigSquare(state,x-1,y);
+		tryToPlaceBigSquare(state,x+1,y);
+		tryToPlaceBigSquare(state,x,y-1);
+		tryToPlaceBigSquare(state,x,y+1);
+		//Add back to board
+		for(int i=0;i<2;i++){
+			for(int j=0;j<2;j++){
+				if(x+i < NROWS && y+j < NCOLS){
+					board[x+i][y+j] = true;
 				}
 			}
 		}
 	}
-
-	void printN() {
-		cout << "neighbors: ";
-		for (auto i = n.begin(); i != n.end(); i++) {
-			cout << *i << " ";
+	
+	void tryToPlaceBigSquare(long int state,int x, int y){
+		for(int i=0;i<2;i++){
+			for(int j=0;j<2;j++){
+				if(x+i < NROWS && y+j < NCOLS && x+i >= 0 && y+j >= 0){
+					if(board[x+i][y+j]){
+						return; //Another piece is already placed here
+					}
+				}
+				else{//Outside of board
+					return;
+				}
+			}
 		}
-		cout << "\n";
-	}
-
-	void coordinate() {
-		c.clear();
-		for (int i = 0; i < ROWS; i++)
-			for (int j = 0; j < COLS; j++)
-				if(board[i][j] > -1)
-					c[board[i][j]].push_back( make_pair(i, j));
-	}
-
-	void printC() {
-		for (auto i = c.begin(); i != c.end(); i++) {
-			cout << i->first << ": ";
-			for (auto j = i->second.begin(); j != i->second.end(); j++)
-				cout <<'(' <<j->first << ',' << j->second<<')';
-			cout << "\n";
+		long int old_state = state;
+		//Erase previous pos
+		state >>= 6;
+		//Add x coordinate
+		state <<= 3;
+		state |= x;
+		//Add y coordinate
+		state <<= 3;
+		state |= y;
+		if(visited.find(state) == visited.end()){
+			visited.insert(state);
+			Q.push(state);
+			parentOf[state] = old_state;
 		}
-		cout << "\n";
 	}
-
-	bool found() {
-		return cp[4][1] == 9 && cp[4][2] == 9;
-	}
-
-	bool validMove(int row, int col, vector<pair<int,int>> xy) {
-		for (auto i = xy.begin(); i != xy.end(); i++) {
-			if ((i->first + row) > -1 && (i->first + row) < ROWS && (i->second + col) > -1 && (i->second + col) < COLS)
-				if (cp[i->first + row][i->second + col] == -1 || cp[i->first + row][i->second + col] == board[i->first][i->second])
-					continue;
-				else
-					return false;
-			else
-				return false;
+	
+	void assignStateToBlocks(long int state){
+		int uw = bframe.w/NCOLS;
+		int uh = bframe.h/NROWS;
+		for(int i=9;i>=0;i--){
+			int y = state & 7;
+			state >>= 3;
+			int x = state & 7;
+			state >>= 3;
+			if(x == NROWS){ //If piece is outside of board skip it
+				continue;
+			}
+			B[i].i = x;
+			B[i].j = y;
+			B[i].R.x = bframe.x + y*uw + ep;
+			B[i].R.y = bframe.y + x*uh + ep;
 		}
-		return true;
 	}
-
-	void bfs() {
-		size_t counter = 0;
-		clear();
-		read();
-		q.clear();
-		p.clear();
-		r.clear();
-		solution.clear();
-		vector<vector<int>> initB = board;
-		goal.clear();
-		q.push_back(board);
-
-		while (!q.empty()) {
-			board = q.front();
-			cp = board;
-			coordinate();
-			neighbors();
-			q.pop_front();
-
-			if (found()) {
-				cout << "Solution Found!!!\n";
-				goal = board;
+	
+public:
+	
+	Solution(){
+		state_index = 0;
+		states.clear();
+		parentOf.clear();
+		visited.clear();
+		Q = queue<long int>();
+		clearBoard();
+		found = false;
+	}
+	
+	void solve(){
+		state_index = 0;
+		Q = queue<long int>();
+		states.clear();
+		parentOf.clear();
+		visited.clear();
+		clearBoard();
+		long int start = readCurrentState();
+		visited.insert(start);
+		Q.push(start);
+		found = false;
+		long int found_state = 0;
+		while(!Q.empty() && !found){
+			long int state = Q.front();
+			found = isFound(state);
+			if(found){
+				found_state = state;
 				break;
 			}
-			cout << "NO. of Configuration: " << counter++ << '\n';
-			for (auto i = n.begin(); i != n.end(); i++) {
-				int z = *i;
-				for (int j = 0; j < 8; j++) {
-					int row = dir[j][0], col = dir[j][1];
-					if (validMove(row, col, c[*i])) {
-						for (auto i = c[z].begin(); i != c[z].end(); i++) {
-							cp[i->first][i->second] = -1;
-						}
-						for (auto i = c[z].begin(); i != c[z].end(); i++) {
-							cp[i->first + row][i->second + col] = z;
-						}
-						simplfiy(cp);
-						if (find(q.begin(), q.end(), cp) == q.end() && find(r.begin(), r.end(), sboard) == r.end()) {
-							r.push_back(sboard);
-							q.push_back(cp);
-							p.insert({ cp,board });
-						}
-					}
-					cp = board;
-				}
+			Q.pop();
+			assignToBoard(state);
+			generateChildStates(state);
+		}
+		if(found){
+			printf("Solution found.\n");
+			while(parentOf.find(found_state) != parentOf.end()){ //State is not starting state
+				states.push_back(found_state);
+				found_state = parentOf[found_state];
 			}
-
+			states.push_back(start);
+			state_index = states.size() - 1;
+			
 		}
-		if (goal == board) {
-			solution.push_back(goal);
-			while (p.find(goal)->second != initB) {
-				goal = p.find(goal)->second;
-				solution.push_front(goal);
-			}
-			//solution.push_front(goal);
-			solution.push_front(initB);
-			printf("Solved in %zu steps.\n", solution.size());
-		}
-		else
-			cout << "No Solution!!!\n";
-
-	}
-
-	void simplfiy(vector<vector<int>> g) {
-
-		for (int i = 0; i < ROWS; i++)
-			for (int j = 0; j < COLS; j++)
-				if(g[i][j]>-1)
-					g[i][j] = B[g[i][j]].type;
-		sboard = g;
-	}
-
-	void assignToBoard(vector<vector<int>> g) {
-		board = g;
-		coordinate();
-		int uw = bframe.w / COLS;
-		int uh = bframe.h / ROWS;
-		for (int i = 0; i < NBLOCKS; i++)
-		{
-			B[i].r = c[i].at(0).first;
-			B[i].c = c[i].at(0).second;
-			B[i].R.x = bframe.x + B[i].c * uw + ep;
-			B[i].R.y = bframe.y + B[i].r * uh + ep;
+		else{
+			printf("Solution not found.\n");
 		}
 	}
-
-	void prev() {
-		if (index <= 0){
-			assignToBoard(solution[0]);
+	
+	void next_state(){
+		if(state_index <= 0){
 			return;
 		}
-
-		assignToBoard(solution[index--]);
+		state_index--;
+		long int state = states.at(state_index);
+		assignStateToBlocks(state);
 	}
-
-	void next() {
-		if (index >= solution.size()-1){
-			assignToBoard(solution[solution.size()-1]);
+	
+	void previous_state(){
+		if(state_index >= states.size()-1){
 			return;
-			}
-
-		assignToBoard(solution[index++]);
-	}
-
-	void oneClickSolve() {
-		int i = 0;
-		while (i != solution.size()) {
-			//printf("# of Configuration: %i\n", i);
-			assignToBoard(solution[i]);
-			//std::this_thread::sleep_for(std::chrono::seconds(5));
-			i++;
 		}
-
-
+		state_index++;
+		long int state = states.at(state_index);
+		assignStateToBlocks(state);
 	}
-
-
-	size_t steps() {
-		return solution.size();
+	
+	long int readCurrentState(){
+		long int state = 0;
+		for(int i=0;i<NBLOCKS;i++){
+			state <<= 3;
+			state |= B[i].i;
+			state <<= 3;
+			state |= B[i].j;
+		}
+		return state;
 	}
-
-	solver() {
-		vector<vector<int>> temp(5, vector<int>(4, -1));
-		board = temp;
-		cp = temp;
-		index = 0;
-	}
-
-private:
-	vector<vector<int>> board;
-	vector<vector<int>> cp;//copy of board;
-	vector<vector<int>> sboard;//simplified board;
-	vector<vector<int>> goal;
-	deque<vector<vector<int>>> q;//for bfs
-	unordered_set<int> n;//neighbours
-	deque<vector<vector<int>>> solution;
-	map<vector<vector<int>>, vector<vector<int>>> p;//record parent of generated state
-	map<int,vector<pair<int, int>>> c;
-	vector<vector<int>> dir = { {0,1}, {0,-1}, {1,0}, {-1,0}, {0,2}, {0,-2}, {2,0}, {-2,0} };
-	deque<vector<vector<int>>> r; //eliminate repeated conggiguration
-	int index;
+	
 };
 
 int main(int argc, char *argv[])
 {
+	Solution s;
 	/* TODO: add option to specify starting state from cmd line? */
 	/* start SDL; create window and such: */
 	if(!init()) {
@@ -578,8 +619,6 @@ int main(int argc, char *argv[])
 	atexit(close);
 	bool quit = false; /* set this to exit main loop. */
 	SDL_Event e;
-	solver s;
-
 	/* main loop: */
 	while(!quit) {
 		/* handle events */
@@ -627,20 +666,20 @@ int main(int argc, char *argv[])
 						break;
 					case SDLK_LEFT:
 						/* TODO: show previous step of solution */
-						s.prev();
+						s.previous_state();
 						break;
 					case SDLK_RIGHT:
 						/* TODO: show next step of solution */
-						s.next();
+						s.next_state();
 						break;
 					case SDLK_p:
 						/* TODO: print the state to stdout
 						 * (maybe for debugging purposes...) */
-						s.print();
+						printf("Current state is %ld\n",s.readCurrentState());
 						break;
 					case SDLK_s:
 						/* TODO: try to find a solution */
-						s.bfs();
+						s.solve();
 						break;
 					default:
 						break;
@@ -654,3 +693,41 @@ int main(int argc, char *argv[])
 	printf("total frames rendered: %i\n",fcount);
 	return 0;
 }
+//void createSsq(int i, int r, int c, int x, int y) {
+	//	uint64_t cp = 0, eraser = 0, newRC = 0;
+
+	//	//printf("r+x: %i, c+y: %i\n", r + x, c + y);
+	//	if (r + x >= 0 && r + x < ROW && c + y < COL && c + y >= 0) {
+	//		if (graph[r + x][c + y] == 0) {
+	//			cp = state;
+	//			eraser = 0;
+	//			newRC = 0;
+
+	//			eraser |= 63;
+	//			eraser <<= ((B[i].p - 1) * 3);
+	//			printf("Eraser: %" PRId64"\n", eraser);
+	//			eraser = ~eraser;
+	//			cp &= eraser;
+
+	//			printf("Initial r: %i, c: %i \n",r,c);
+	//			printf("After r+x: %i, c+y: %i \n", r + x, c + y);
+	//			printf("Eraser: %" PRId64"\n", eraser);
+	//			newRC |= (r + x);
+	//			newRC <<= 3;
+	//			newRC |= (c + y);
+	//			newRC <<= ((B[i].p - 1) * 3);
+	//			cp |= newRC;
+
+	//			if (find(visited.begin(), visited.end(), cp) == visited.end())
+	//			{
+	//				q.push_back(cp);
+	//				p[cp] = state;
+	//				visited.push_back(cp);
+	//				printf("Parent Configuration: %" PRId64"\n", state);
+	//				printf("Child Configuration: %" PRId64"\n", cp);
+	//			}
+
+	//		}
+	//	}
+
+	//}
